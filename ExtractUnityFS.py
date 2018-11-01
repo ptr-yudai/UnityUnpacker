@@ -26,6 +26,31 @@ def gunzip(in_name, out_name):
     with open(out_name, 'wb') as f:
         f.write(data)
 
+def decompress(data, compress_type, size=-1):
+    if compress_type == 1:
+        # LZMA
+        d = lzma.LZMADecompressor()
+        data = d.decompress(data)
+        print("[+] Decompressed with LZMA")
+    elif compress_type == 2:
+        # LZ4
+        if size == -1:
+            data = lz4.frame.decompress(data)
+        else:
+            data = lz4.frame.decompress(data, size)
+        print("[+] Decompressed with LZ4")
+    elif compress_type == 3:
+        # LZ4HC
+        if size == -1:
+            data = lz4.block.decompress(data)
+        else:
+            data = lz4.block.decompress(data, size)
+    elif compress_type == 4:
+        # LZHAM
+        print("[-] The block is compressed with LZHAM, which is not supported")
+        return None
+    return data
+    
 def extract(filepath):
     f = open(filepath, 'rb')
     # Read header
@@ -67,35 +92,23 @@ def extract(filepath):
         print("[+] The block and directory list is located at the end of this bundle")
         f.seek(-ciblock_size, 2)
     blocks_container = f.read(ciblock_size)
-    if compress_type == 1:
-        # LZMA
-        d = lzma.LZMADecompressor()
-        blocks_container = d.decompress(blocks_container)
-        print("[+] Decompressed with LZMA")
-    elif compress_type == 2:
-        # LZ4
-        blocks_container = lz4.frame.decompress(blocks_container, uiblock_size)
-        print("[+] Decompressed with LZ4")
-    elif compress_type == 3:
-        # LZ4HC
-        blocks_container = lz4.block.decompress(blocks_container, uiblock_size)
-    elif compress_type == 4:
-        # LZHAM
-        print("[-] The block is compressed with LZHAM, which is not supported")
-        return
+    blocks_container = decompress(blocks_container, compress_type, uiblock_size)
     # Blocks
     guid = blocks_container[:16].encode('hex')
     num_blocks = struct.unpack('>I', blocks_container[16:20])[0]
     print("[+] GUID(?): " + guid)
     print("[+] {0} blocks".format(num_blocks))
     offset = 20
+    block_list = []
     for i in range(num_blocks):
         block = blocks_container[offset:offset+10]
         decompressed_size, compressed_size, flag = struct.unpack('>IIH', block)
+        block_list.append((decompressed_size, compressed_size, flag))
         offset += 10
     # Nodes
     num_nodes = struct.unpack('>I', blocks_container[offset:offset+4])[0]
     offset += 4
+    print("[+] {0} nodes".format(num_nodes))
     node_list = []
     for i in range(num_nodes):
         name_size = blocks_container[offset+20:].index('\x00')
@@ -104,6 +117,20 @@ def extract(filepath):
         node_name = blocks_container[offset+20:offset+20+name_size]
         node_list.append((node_offset, node_size, flag, node_name))
         offset += 20 + name_size + 1
+    # Extract Blocks
+    for x, (decompressed_size, compressed_size, flag) in enumerate(block_list):
+        print("[+] Block {0} ({1} bytes)".format(x + 1, decompressed_size))
+        data = f.read(compressed_size)
+        data = decompress(data, flags & 0x3f, decompressed_size)
+        try:
+            os.makedirs('UnityFS/' + os.path.dirname(path))
+        except:
+            pass
+        with open('UnityFS/__block{0}__'.format(x + 1), 'wb') as fout:
+            fout.write(data)
+    if dir_list_end == 0:
+        end_of_header = f.tell()
+    # Extract Nodes
     for (offset, length, flag, path) in node_list:
         print("[+] File: " + path + " ({0} bytes, at {1})".format(length, offset))
         try:
