@@ -1,5 +1,8 @@
+#!/usr/bin/env python
 import sys
+import os
 import struct
+import gzip
 try:
     import lzma
 except ImportError:
@@ -16,7 +19,6 @@ except ImportError:
     print("[-] Some UnityFS files requires lz4")
     print("[-] Run `pip install lz4`")
     print("[-] https://pypi.org/project/lz4/")
-import gzip
 
 def gunzip(in_name, out_name):
     with gzip.open(in_name, mode='rb') as f:
@@ -58,14 +60,12 @@ def extract(filepath):
     dir_list_end = flags & 0x80
     compress_algs = ['Not Compressed', 'LZMA', 'LZ4', 'LZ4HC', 'LZHAM']
     print("[+] Compression Type: " + compress_algs[compress_type])
+    end_of_header = f.tell()
     if has_dir_info:
         print("[+] This bundle has a directory info")
     if dir_list_end:
         print("[+] The block and directory list is located at the end of this bundle")
         f.seek(-ciblock_size, 2)
-    # Jump to Block
-    print hex(file_size - ciblock_size)
-    #f.seek(file_size - ciblock_size)
     blocks_container = f.read(ciblock_size)
     if compress_type == 1:
         # LZMA
@@ -83,8 +83,37 @@ def extract(filepath):
         # LZHAM
         print("[-] The block is compressed with LZHAM, which is not supported")
         return
-    print blocks_container
-    # Extract files
+    # Blocks
+    guid = blocks_container[:16].encode('hex')
+    num_blocks = struct.unpack('>I', blocks_container[16:20])[0]
+    print("[+] GUID(?): " + guid)
+    print("[+] {0} blocks".format(num_blocks))
+    offset = 20
+    for i in range(num_blocks):
+        block = blocks_container[offset:offset+10]
+        decompressed_size, compressed_size, flag = struct.unpack('>IIH', block)
+        offset += 10
+    # Nodes
+    num_nodes = struct.unpack('>I', blocks_container[offset:offset+4])[0]
+    offset += 4
+    node_list = []
+    for i in range(num_nodes):
+        name_size = blocks_container[offset+20:].index('\x00')
+        node = blocks_container[offset:offset+20+name_size]
+        node_offset, node_size, flag = struct.unpack('>QQI', blocks_container[offset:offset+20])
+        node_name = blocks_container[offset+20:offset+20+name_size]
+        node_list.append((node_offset, node_size, flag, node_name))
+        offset += 20 + name_size + 1
+    for (offset, length, flag, path) in node_list:
+        print("[+] File: " + path + " ({0} bytes, at {1})".format(length, offset))
+        try:
+            os.makedirs('UnityFS/' + os.path.dirname(path))
+        except:
+            pass
+        with open('UnityFS/' + path, 'wb') as fout:
+            f.seek(end_of_header + offset)
+            data = f.read(length)
+            fout.write(data)
     f.close()
 
 if __name__ == '__main__':

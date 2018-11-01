@@ -26,11 +26,11 @@ def extract(filepath):
         path = f.read(path_length)
         print("- {0} ({1} bytes)".format(path, data_length))
         try:
-            os.makedirs('ExtractedData/' + os.path.dirname(path))
+            os.makedirs('UnityWebData/' + os.path.dirname(path))
         except:
             pass
         whereami = f.tell()
-        with open('ExtractedData/' + path, 'wb') as fout:
+        with open('UnityWebData/' + path, 'wb') as fout:
             f.seek(data_offset)
             data = f.read(data_length)
             fout.write(data)
