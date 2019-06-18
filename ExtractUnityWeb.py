@@ -13,7 +13,7 @@ def extract(filepath):
     f = open(filepath, 'rb')
     # Read header
     magic = f.read(16)
-    if magic != 'UnityWebData1.0\x00':
+    if magic != b'UnityWebData1.0\x00':
         print("[-] Invalid header: " + repr(magic))
         return
     header_length = struct.unpack('<I', f.read(4))[0]
@@ -23,7 +23,7 @@ def extract(filepath):
     while offset < header_length:
         packet = struct.unpack('<III', f.read(12))
         data_offset, data_length, path_length = packet
-        path = f.read(path_length)
+        path = f.read(path_length).decode()
         print("- {0} ({1} bytes)".format(path, data_length))
         try:
             os.makedirs('UnityWebData/' + os.path.dirname(path))
@@ -54,7 +54,7 @@ if __name__ == '__main__':
     except:
         with open(sys.argv[1], 'rb') as f:
             magic = f.read(16)
-        if magic == 'UnityWebData1.0\x00':
+        if magic == b'UnityWebData1.0\x00':
             print("[+] You specified decompressed file")
             filepath = sys.argv[1]
         else:
